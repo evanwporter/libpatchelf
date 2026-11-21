@@ -22,6 +22,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <filesystem>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -29,6 +30,8 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
+#include <type_traits>
 #include <vector>
 
 #include <cassert>
@@ -45,6 +48,7 @@
 
 #include "elf.h"
 #include "patchelf.h"
+#include "libpatchelf.h"
 
 #ifndef PACKAGE_STRING
 #define PACKAGE_STRING "patchelf"
@@ -2193,20 +2197,122 @@ void ElfFile<ElfFileParamNames>::addNeeded(const std::set<std::string> & libs)
 }
 
 template<ElfFileParams>
-void ElfFile<ElfFileParamNames>::printNeededLibs() const
+std::optional<std::string> ElfFile<ElfFileParamNames>::getSoname() const
 {
-    const auto shdrDynamic = findSectionHeader(".dynamic");
-    const auto shdrDynStr = findSectionHeader(".dynstr");
-    auto strTab = getStrTab(shdrDynStr);
+    if (rdi(hdr()->e_type) != ET_DYN)
+        return std::nullopt;
 
+    const auto& shdrDynamic =
+        findSectionHeader(".dynamic");
+
+    const auto& shdrDynStr =
+        findSectionHeader(".dynstr");
+
+    auto strTab = getStrTab(shdrDynStr);
     auto dynSpan = getSectionSpan<Elf_Dyn>(shdrDynamic);
 
-    for (const auto * dyn = dynSpan.begin(); dyn < dynSpan.end() && rdi(dyn->d_tag) != DT_NULL; dyn++) {
-        if (rdi(dyn->d_tag) == DT_NEEDED) {
-            const char *name = strTabEntry(strTab, rdi(dyn->d_un.d_val));
-            printf("%s\n", name);
+    for (const auto* dyn = dynSpan.begin();
+         dyn < dynSpan.end() &&
+         rdi(dyn->d_tag) != DT_NULL;
+         ++dyn) {
+
+        if (rdi(dyn->d_tag) != DT_SONAME)
+            continue;
+
+        return std::string(
+            strTabEntry(
+                strTab,
+                rdi(dyn->d_un.d_val)
+            )
+        );
+    }
+
+    return std::nullopt;
+}
+
+template<ElfFileParams>
+std::vector<std::string> ElfFile<ElfFileParamNames>::getNeededLibs() const
+{
+    std::vector<std::string> result;
+
+    const auto& shdrDynamic =
+        findSectionHeader(".dynamic");
+
+    const auto& shdrDynStr =
+        findSectionHeader(".dynstr");
+
+    auto strTab = getStrTab(shdrDynStr);
+    auto dynSpan = getSectionSpan<Elf_Dyn>(shdrDynamic);
+
+    for (const auto* dyn = dynSpan.begin();
+         dyn < dynSpan.end() &&
+         rdi(dyn->d_tag) != DT_NULL;
+         ++dyn) {
+
+        if (rdi(dyn->d_tag) != DT_NEEDED)
+            continue;
+
+        result.emplace_back(
+            strTabEntry(
+                strTab,
+                rdi(dyn->d_un.d_val)
+            )
+        );
+    }
+
+    return result;
+}
+
+template<ElfFileParams>
+void ElfFile<ElfFileParamNames>::printNeededLibs() const
+{
+    for (const auto& name : getNeededLibs())
+        printf("%s\n", name.c_str());
+}
+
+template<ElfFileParams>
+std::string ElfFile<ElfFileParamNames>::getRPath() const
+{
+    const auto& shdrDynamic =
+        findSectionHeader(".dynamic");
+
+    const auto& shdrDynStr =
+        findSectionHeader(".dynstr");
+
+    auto strTab = getStrTab(shdrDynStr);
+    auto dynSpan = getSectionSpan<Elf_Dyn>(shdrDynamic);
+
+    std::optional<std::string> rpath;
+    std::optional<std::string> runpath;
+
+    for (const auto* dyn = dynSpan.begin();
+         dyn < dynSpan.end() &&
+         rdi(dyn->d_tag) != DT_NULL;
+         ++dyn) {
+
+        const auto tag = rdi(dyn->d_tag);
+
+        if (tag == DT_RPATH) {
+            rpath = strTabEntry(
+                strTab,
+                rdi(dyn->d_un.d_val)
+            );
+        }
+        else if (tag == DT_RUNPATH) {
+            runpath = strTabEntry(
+                strTab,
+                rdi(dyn->d_un.d_val)
+            );
         }
     }
+
+    if (runpath)
+        return *runpath;
+
+    if (rpath)
+        return *rpath;
+
+    return {};
 }
 
 
@@ -3294,7 +3400,7 @@ static int mainWrapped(int argc, char * * argv)
     return 0;
 }
 
-int main(int argc, char * * argv)
+int patchelf_main(int argc, char * * argv)
 {
 #ifdef __OpenBSD__
     if (pledge("stdio rpath wpath cpath", NULL) == -1)
@@ -3308,3 +3414,252 @@ int main(int argc, char * * argv)
         return 1;
     }
 }
+
+namespace patchelf {
+
+using Elf32 = ::ElfFile<
+    Elf32_Ehdr,
+    Elf32_Phdr,
+    Elf32_Shdr,
+    Elf32_Nhdr,
+    Elf32_Addr,
+    Elf32_Off,
+    Elf32_Dyn,
+    Elf32_Sym,
+    Elf32_Versym,
+    Elf32_Verdef,
+    Elf32_Verdaux,
+    Elf32_Verneed,
+    Elf32_Vernaux,
+    Elf32_Rel,
+    Elf32_Rela,
+    32
+>;
+
+using Elf64 = ::ElfFile<
+    Elf64_Ehdr,
+    Elf64_Phdr,
+    Elf64_Shdr,
+    Elf64_Nhdr,
+    Elf64_Addr,
+    Elf64_Off,
+    Elf64_Dyn,
+    Elf64_Sym,
+    Elf64_Versym,
+    Elf64_Verdef,
+    Elf64_Verdaux,
+    Elf64_Verneed,
+    Elf64_Vernaux,
+    Elf64_Rel,
+    Elf64_Rela,
+    64
+>;
+
+// ------------------------------------------------------------
+// Private implementation
+// ------------------------------------------------------------
+
+struct ElfFile::Impl {
+
+    using Handle = std::variant<
+        std::unique_ptr<Elf32>,
+        std::unique_ptr<Elf64>
+    >;
+
+    std::filesystem::path filename;
+
+    Handle elf;
+
+    std::vector<std::string> pendingRPaths;
+
+    bool saved = false;
+
+    static Handle load(const std::filesystem::path& path)
+    {
+        auto contents = readFile(path.string());
+
+        if (getElfType(contents).is32Bit) {
+            return std::make_unique<Elf32>(
+                std::move(contents)
+            );
+        }
+
+        return std::make_unique<Elf64>(
+            std::move(contents)
+        );
+    }
+
+    explicit Impl(const std::filesystem::path& path)
+        : filename(path),
+          elf(load(path))
+    {
+    }
+
+    template<typename Fn>
+    decltype(auto) visit(Fn&& fn)
+    {
+        return std::visit(
+            [&](auto& ptr) -> decltype(auto) {
+                return fn(*ptr);
+            },
+            elf
+        );
+    }
+
+    template<typename Fn>
+    decltype(auto) visit(Fn&& fn) const
+    {
+        return std::visit(
+            [&](const auto& ptr) -> decltype(auto) {
+                return fn(
+                    static_cast<const
+                        std::remove_reference_t<decltype(*ptr)>&>(
+                        *ptr
+                    )
+                );
+            },
+            elf
+        );
+    }
+};
+
+// ------------------------------------------------------------
+// Construction and ownership
+// ------------------------------------------------------------
+
+ElfFile::ElfFile(const std::filesystem::path& path)
+    : impl_(std::make_unique<Impl>(path))
+{
+}
+
+ElfFile::~ElfFile() = default;
+
+ElfFile::ElfFile(ElfFile&&) noexcept = default;
+
+ElfFile& ElfFile::operator=(ElfFile&&) noexcept = default;
+
+// ------------------------------------------------------------
+// Read-only operations
+// ------------------------------------------------------------
+
+std::vector<std::string> ElfFile::getNeeded() const
+{
+    return impl_->visit([](const auto& elf) {
+        return elf.getNeededLibs();
+    });
+}
+
+std::optional<std::string> ElfFile::getSoname() const
+{
+    return impl_->visit([](const auto& elf) {
+        return elf.getSoname();
+    });
+}
+
+std::string ElfFile::getRPath() const
+{
+    std::string result = impl_->visit(
+        [](const auto& elf) {
+            return elf.getRPath();
+        }
+    );
+
+    for (const auto& directory : impl_->pendingRPaths) {
+        if (!result.empty())
+            result += ":";
+
+        result += directory;
+    }
+
+    return result;
+}
+
+// ------------------------------------------------------------
+// Mutating operations
+// ------------------------------------------------------------
+
+void ElfFile::addRPath(const std::string& directory)
+{
+    if (impl_->saved)
+        throw std::logic_error(
+            "Cannot modify an ELF after save()"
+        );
+
+    if (directory.empty())
+        throw std::invalid_argument(
+            "RPATH directory must not be empty"
+        );
+
+    if (directory.find(':') != std::string::npos)
+        throw std::invalid_argument(
+            "RPATH directory must not contain ':'"
+        );
+
+    impl_->pendingRPaths.push_back(directory);
+}
+
+bool ElfFile::isChanged() const noexcept
+{
+    if (impl_->saved)
+        return false;
+
+    if (!impl_->pendingRPaths.empty())
+        return true;
+
+    return impl_->visit([](const auto& elf) {
+        return elf.isChanged();
+    });
+}
+
+// ------------------------------------------------------------
+// Persist changes
+// ------------------------------------------------------------
+
+void ElfFile::save()
+{
+    if (impl_->saved)
+        throw std::logic_error(
+            "ELF has already been saved"
+        );
+
+    if (!impl_->pendingRPaths.empty()) {
+
+        std::string addedRPath;
+
+        for (const auto& directory : impl_->pendingRPaths) {
+
+            if (!addedRPath.empty())
+                addedRPath += ":";
+
+            addedRPath += directory;
+        }
+
+        impl_->visit([&](auto& elf) {
+            elf.modifyRPath(
+                elf.rpAdd,
+                {},
+                addedRPath
+            );
+        });
+        impl_->pendingRPaths.clear();
+    }
+
+    const bool changed = impl_->visit(
+        [](const auto& elf) {
+            return elf.isChanged();
+        }
+    );
+
+    if (changed) {
+        impl_->visit([&](auto& elf) {
+            writeFile(
+                impl_->filename.string(),
+                elf.fileContents
+            );
+        });
+    }
+
+    impl_->saved = true;
+}
+
+} // namespace patchelf

@@ -11,6 +11,7 @@ project(
 )
 
 subdir('src')
+subdir('tests/libpatchelf-meson')
 #subdir('tests') # TODO
 
 install_man('patchelf.1')

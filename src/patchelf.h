@@ -176,6 +176,15 @@ public:
 
     void printNeededLibs() const;
 
+    [[nodiscard]]
+    std::vector<std::string> getNeededLibs() const;
+
+    [[nodiscard]]
+    std::optional<std::string> getSoname() const;
+
+    [[nodiscard]]
+    std::string getRPath() const;
+
     void noDefaultLib();
 
     void addDebugTag();

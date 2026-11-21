@@ -19,4 +19,8 @@ endif
 
 bin_PROGRAMS = patchelf
 
-patchelf_SOURCES = patchelf.cc elf.h patchelf.h
+lib_LIBRARIES = libpatchelf.a
+libpatchelf_a_SOURCES = patchelf.cc elf.h patchelf.h libpatchelf.h
+patchelf_SOURCES = patchelf-main.cc
+patchelf_LDADD = libpatchelf.a
+include_HEADERS = libpatchelf.h

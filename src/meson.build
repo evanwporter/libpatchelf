@@ -9,10 +9,13 @@ endif
 
 config_h = configure_file(output : 'config.h', configuration : confdata)
 
-executable(
+patchelf_lib = static_library(
   'patchelf',
-  [ 'patchelf.cc', 'patchelf.h', config_h ],
+  [ 'patchelf.cc', 'patchelf.h', 'libpatchelf.h', config_h ],
   include_directories : include_directories('.'),
   cpp_args : [ '-include', meson.current_build_dir() / 'config.h' ],
   install : true,
 )
+
+executable('patchelf', 'patchelf-main.cc', link_with : patchelf_lib, install : true)
+install_headers('libpatchelf.h')

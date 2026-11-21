@@ -3,6 +3,24 @@
 PatchELF is a simple utility for modifying existing ELF executables and
 libraries.  In particular, it can do the following:
 
+The C++17 library is available as `libpatchelf.a` with the public header
+`libpatchelf.h`. It can read `DT_NEEDED`, `DT_SONAME`, and the effective
+RPATH/RUNPATH, and append directories to the RPATH/RUNPATH:
+
+```cpp
+#include <libpatchelf.h>
+
+patchelf::ElfFile elf("program");
+auto dependencies = elf.getNeeded();
+auto soname = elf.getSoname(); // std::optional<std::string>
+elf.addRPath("/opt/my-libs");
+elf.save();
+```
+
+`save()` writes changes to the original file. An `ElfFile` can be saved once;
+further changes require opening it again. Errors are reported as C++
+exceptions. Link with `-lpatchelf`.
+
 * Change the dynamic loader ("ELF interpreter") of executables:
 
   ```console

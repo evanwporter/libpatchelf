@@ -76,8 +76,13 @@ build_TESTS = \
   $(no_rpath_arch_TESTS)
 
 TESTS = $(src_TESTS) $(build_TESTS)
+TESTS += libpatchelf-api.sh
+check_PROGRAMS += libpatchelf-api
+libpatchelf_api_SOURCES = libpatchelf-api.cc
+libpatchelf_api_CPPFLAGS = -I$(top_srcdir)/src
+libpatchelf_api_LDADD = ../src/libpatchelf.a
 
-EXTRA_DIST = no-rpath-prebuild $(src_TESTS) no-rpath-prebuild.sh invalid-elf endianness empty-note \
+EXTRA_DIST = libpatchelf-api.sh no-rpath-prebuild $(src_TESTS) no-rpath-prebuild.sh invalid-elf endianness empty-note \
 			 overlapping-segments-after-rounding short-first-segment.gz
 
 TESTS_ENVIRONMENT = PATCHELF_DEBUG=1 STRIP=$(STRIP) NM=$(NM) OBJDUMP=$(OBJDUMP) READELF=$(READELF) OBJCOPY=$(OBJCOPY) STRINGS=$(STRINGS)
